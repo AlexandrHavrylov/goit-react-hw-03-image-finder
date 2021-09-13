@@ -2,9 +2,9 @@ import React, { Component } from "react";
 import Button from "../Button/Button";
 import { ImageGallery } from "../ImageGallery/ImageGallery";
 import { Modal } from "../Modal/Modal";
-
 import { Serachbar } from "../Searchbar/Serachbar";
-import { Container } from "./App.styled";
+import { Container, StyledLoader } from "./App.styled";
+import { fetchImage } from "../../servises/image-api";
 
 export class App extends Component {
   state = {
@@ -13,24 +13,46 @@ export class App extends Component {
     page: 1,
     imagesInGallery: [],
     isModalVisible: false,
+    status: "idle",
   };
 
-  // Почему в такой формулировке не работает??
-  // componentDidUpdate(prevProps, prevState) {
-  //   if (this.state.page !== prevState.page) {
-  //     window.scrollTo({
-  //       top: document.documentElement.scrollHeight,
-  //       behavior: "smooth",
-  //     });
-  //   }
-  // }
+  async componentDidUpdate(_, prevState) {
+    const { image, page } = this.state;
+    const pageChange = prevState.page !== page;
+    const imageChange = image.trim() && prevState.image !== image;
 
-  // Так работает но с багом, как правильно вставить этот код?)
-  componentDidUpdate() {
-    if (this.state.page > 1) {
-      window.scrollTo({
-        top: document.documentElement.scrollHeight,
-        behavior: "smooth",
+    try {
+      if (imageChange) {
+        this.setState({
+          status: "pending",
+        });
+
+        const imagesInGallery = await fetchImage(image);
+        this.setState({
+          imagesInGallery,
+          status: "resolved",
+        });
+      }
+
+      if (pageChange) {
+        this.setState({
+          status: "pending",
+        });
+
+        const imagesInGallery = await fetchImage(image, page);
+
+        this.setState((prevState) => ({
+          imagesInGallery: [...prevState.imagesInGallery, ...imagesInGallery],
+          status: "resolved",
+        }));
+        window.scrollTo({
+          top: document.documentElement.scrollHeight,
+          behavior: "smooth",
+        });
+      }
+    } catch {
+      this.setState({
+        status: "rejected",
       });
     }
   }
@@ -38,20 +60,12 @@ export class App extends Component {
   getImage = (image) => {
     this.setState({
       image,
-      page: 1,
-      imagesInGallery: [],
     });
   };
 
   onLoadMore = (page) => {
     this.setState({
       page,
-    });
-  };
-
-  onImageChange = (images) => {
-    this.setState({
-      imagesInGallery: [...images],
     });
   };
 
@@ -67,27 +81,41 @@ export class App extends Component {
       isModalVisible: value,
     });
   };
+
   render() {
-    const { imagesInGallery, imgInModal, isModalVisible } = this.state;
+    const { imagesInGallery, imgInModal, isModalVisible, status } = this.state;
 
     const isVisible = imagesInGallery.length > 0;
-    return (
-      <Container>
-        <Serachbar onSubmit={this.getImage} />
 
-        <ImageGallery
-          onImgClick={this.onImgClick}
-          onImageChange={this.onImageChange}
-          image={this.state.image}
-          page={this.state.page}
-          openModal={this.handleModalOpen}
-        />
-        {isVisible && (
-          <Button onClick={this.onLoadMore} page={this.state.page} />
-        )}
+    if (status === "idle") {
+      return <Serachbar onSubmit={this.getImage} />;
+    }
 
-        {isModalVisible && <Modal onClose={this.modalClose} img={imgInModal} />}
-      </Container>
-    );
+    if (status === "resolved") {
+      return (
+        <Container>
+          <Serachbar onSubmit={this.getImage} />;
+          <ImageGallery
+            images={imagesInGallery}
+            openModal={this.handleModalOpen}
+          />
+          {isVisible && (
+            <Button onClick={this.onLoadMore} page={this.state.page} />
+          )}
+          {isModalVisible && (
+            <Modal onClose={this.modalClose} img={imgInModal} />
+          )}
+        </Container>
+      );
+    }
+    if (status === "pending") {
+      return (
+        <StyledLoader type="ThreeDots" color="#3f51b5" height={80} width={80} />
+      );
+    }
+
+    if (status === "rejectd") {
+      return <p>Ой, что то пошло не так</p>;
+    }
   }
 }
